@@ -1,0 +1,152 @@
+app:
+  description: 'コード生成専用ワークフロー: タスク情報を受け取りClaude claude-sonnet-4-6でコードを生成する'
+  icon: "\U0001F4BB"
+  icon_background: '#D1FAE5'
+  mode: workflow
+  name: dev-supervisor-codegen
+  use_icon_as_answer_icon: false
+
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods: [local_file, remote_url]
+    opening_statement: ''
+    retriever_resource: {enabled: false}
+    sensitive_word_avoidance: {enabled: false}
+    speech_to_text: {enabled: false}
+    suggested_questions: []
+    suggested_questions_after_answer: {enabled: false}
+    text_to_speech: {enabled: false, language: '', voice: ''}
+  graph:
+    edges:
+    - data: {isInIteration: false, sourceType: start, targetType: llm}
+      id: e-start-codegen
+      source: node-start
+      sourceHandle: source
+      target: node-generate-code
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, sourceType: llm, targetType: end}
+      id: e-codegen-end
+      source: node-generate-code
+      sourceHandle: source
+      target: node-end
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    # ─────────── START ───────────
+    - data:
+        desc: 'タスク情報を受け取る'
+        title: START
+        type: start
+        variables:
+        - label: task_title
+          max_length: 256
+          options: []
+          required: true
+          type: text-input
+          variable: task_title
+        - label: task_description
+          max_length: 2048
+          options: []
+          required: true
+          type: text-input
+          variable: task_description
+        - label: task_priority
+          max_length: 16
+          options: []
+          required: false
+          type: text-input
+          variable: task_priority
+        - label: file_map_text
+          max_length: 4096
+          options: []
+          required: false
+          type: paragraph
+          variable: file_map_text
+      height: 180
+      id: node-start
+      position: {x: 80, y: 282}
+      positionAbsolute: {x: 80, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────── コード生成 (LLM) ───────────
+    - data:
+        desc: 'claude-sonnet-4-6でコードを生成'
+        title: コード生成
+        type: llm
+        model:
+          provider: anthropic
+          name: claude-sonnet-4-6
+          mode: chat
+          completion_params:
+            temperature: 0.2
+            max_tokens: 8192
+        prompt_template:
+        - role: system
+          text: |
+            あなたはシニアソフトウェアエンジニアです。
+            タスク仕様に基づいて高品質な実装コードを生成してください。
+            マークダウンのコードブロックは絶対に使わず、純粋なJSONのみで回答してください。
+        - role: user
+          text: |
+            以下のタスクを実装してください。
+
+            【タスク】
+            タイトル: {{#node-start.task_title#}}
+            説明: {{#node-start.task_description#}}
+            優先度: {{#node-start.task_priority#}}
+
+            【既存ファイルマップ】
+            {{#node-start.file_map_text#}}
+
+            以下のJSON形式のみで回答してください（マークダウン・コードブロック不使用）:
+            {"files":[{"path":"ファイルパス","content":"ファイルの完全な内容","description":"役割の一行説明"}],"summary":"実装内容の要約"}
+        context:
+          enabled: false
+          variable_selector: []
+        memory:
+          enabled: false
+          window:
+            enabled: false
+            size: 10
+        vision:
+          enabled: false
+      height: 98
+      id: node-generate-code
+      position: {x: 400, y: 282}
+      positionAbsolute: {x: 400, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────── END ───────────
+    - data:
+        desc: '生成コードを出力'
+        title: END
+        type: end
+        outputs:
+        - value_selector: [node-generate-code, text]
+          variable: generated_code
+      height: 98
+      id: node-end
+      position: {x: 720, y: 282}
+      positionAbsolute: {x: 720, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244

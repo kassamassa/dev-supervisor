@@ -1,0 +1,215 @@
+app:
+  description: '④通知ワークフロー（共通モジュール）: ①②③から呼び出され、種別に応じてメッセージを整形してDifyチャット出力する'
+  icon: "\U0001F514"
+  icon_background: '#FEF3C7'
+  mode: workflow
+  name: dev-supervisor-04-notify
+  use_icon_as_answer_icon: false
+
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods: [local_file, remote_url]
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+  graph:
+    edges:
+    - data: {isInIteration: false, sourceType: start, targetType: code}
+      id: e-start-format
+      source: node-start
+      sourceHandle: source
+      target: node-format-message
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, sourceType: code, targetType: end}
+      id: e-format-end
+      source: node-format-message
+      sourceHandle: source
+      target: node-end
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    # ─────── START ───────
+    - data:
+        desc: '通知種別・パラメータを受け取る'
+        selected: false
+        title: START
+        type: start
+        variables:
+        - label: notify_type
+          max_length: 64
+          options: []
+          required: true
+          type: text-input
+          variable: notify_type
+        - label: task_title
+          max_length: 256
+          options: []
+          required: false
+          type: text-input
+          variable: task_title
+        - label: branch
+          max_length: 256
+          options: []
+          required: false
+          type: text-input
+          variable: branch
+        - label: pr_number
+          max_length: 16
+          options: []
+          required: false
+          type: text-input
+          variable: pr_number
+        - label: attempt
+          max_length: 8
+          options: []
+          required: false
+          type: text-input
+          variable: attempt
+        - label: max_attempts
+          max_length: 8
+          options: []
+          required: false
+          type: text-input
+          variable: max_attempts
+        - label: error_summary
+          max_length: 1024
+          options: []
+          required: false
+          type: text-input
+          variable: error_summary
+        - label: task_count
+          max_length: 8
+          options: []
+          required: false
+          type: text-input
+          variable: task_count
+      height: 220
+      id: node-start
+      position: {x: 30, y: 200}
+      positionAbsolute: {x: 30, y: 200}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────── メッセージ整形 (Code) ───────
+    - data:
+        desc: '通知種別に応じてメッセージを整形'
+        selected: false
+        title: メッセージ整形
+        type: code
+        variables:
+        - value_selector: [node-start, notify_type]
+          variable: notify_type
+        - value_selector: [node-start, task_title]
+          variable: task_title
+        - value_selector: [node-start, branch]
+          variable: branch
+        - value_selector: [node-start, pr_number]
+          variable: pr_number
+        - value_selector: [node-start, attempt]
+          variable: attempt
+        - value_selector: [node-start, max_attempts]
+          variable: max_attempts
+        - value_selector: [node-start, error_summary]
+          variable: error_summary
+        - value_selector: [node-start, task_count]
+          variable: task_count
+        code_language: python3
+        code: |
+          def main(notify_type, task_title="", branch="", pr_number="",
+                   attempt="", max_attempts="5", error_summary="", task_count=""):
+              templates = {
+                  "task_started": (
+                      "[開始] タスク実行開始\n"
+                      f"タスク: {task_title}\n"
+                      f"ブランチ: {branch}\n"
+                      "ステータス: in_progress"
+                  ),
+                  "task_completed": (
+                      "[完了] タスク完了\n"
+                      f"タスク: {task_title}\n"
+                      f"ブランチ: {branch}"
+                  ),
+                  "test_passed": (
+                      "[成功] テスト通過\n"
+                      f"タスク: {task_title}\n"
+                      f"ブランチ: {branch}\n"
+                      f"PR作成: #{pr_number}"
+                  ),
+                  "test_failed": (
+                      "[失敗] テスト失敗 - 自動修正中\n"
+                      f"タスク: {task_title}\n"
+                      f"ブランチ: {branch}\n"
+                      f"修正試行: {attempt}/{max_attempts}回目\n"
+                      f"エラー: {error_summary[:200]}"
+                  ),
+                  "escalation": (
+                      "[要確認] エスカレーション\n"
+                      f"タスク: {task_title}\n"
+                      f"ブランチ: {branch}\n"
+                      f"自動修正上限({max_attempts}回)到達\n"
+                      f"エラー: {error_summary[:300]}\n"
+                      "→ 手動確認をお願いします"
+                  ),
+                  "requirements_received": (
+                      "[受付] 要件受付完了\n"
+                      f"タスク数: {task_count}件\n"
+                      "タスク実行ワークフローを開始します"
+                  ),
+              }
+              message = templates.get(notify_type, f"[通知] {notify_type}")
+              return {"message": message, "notify_type": notify_type}
+        outputs:
+          message:
+            type: string
+          notify_type:
+            type: string
+      height: 54
+      id: node-format-message
+      position: {x: 330, y: 200}
+      positionAbsolute: {x: 330, y: 200}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────── END ───────
+    - data:
+        desc: '整形済みメッセージを出力'
+        selected: false
+        title: END
+        type: end
+        outputs:
+        - value_selector: [node-format-message, message]
+          variable: message
+        - value_selector: [node-format-message, notify_type]
+          variable: notify_type
+      height: 98
+      id: node-end
+      position: {x: 630, y: 200}
+      positionAbsolute: {x: 630, y: 200}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244

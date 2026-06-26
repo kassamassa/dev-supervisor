@@ -1,0 +1,684 @@
+app:
+  description: 'タスク実行ワークフロー v2: URL生成バグ修正・コード生成→ブランチ作成の正順'
+  icon: "\U0001F6E0"
+  icon_background: '#E0F2FE'
+  mode: workflow
+  name: dev-supervisor-02-task-execution
+  use_icon_as_answer_icon: false
+
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods: [local_file, remote_url]
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    # START → タスク仕様取得
+    - data: {isInIteration: false, sourceType: start, targetType: http-request}
+      id: e-start-get-task
+      source: node-start
+      sourceHandle: source
+      target: node-get-task
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # タスク仕様取得 → ファイルマップ取得
+    - data: {isInIteration: false, sourceType: http-request, targetType: http-request}
+      id: e-get-task-get-project
+      source: node-get-task
+      sourceHandle: source
+      target: node-get-project
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # ファイルマップ取得 → コンテキスト整形
+    - data: {isInIteration: false, sourceType: http-request, targetType: code}
+      id: e-get-project-parse
+      source: node-get-project
+      sourceHandle: source
+      target: node-parse-context
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # コンテキスト整形 → 必要ファイル選定 (LLM)
+    - data: {isInIteration: false, sourceType: code, targetType: llm}
+      id: e-parse-select-files
+      source: node-parse-context
+      sourceHandle: source
+      target: node-select-files
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # 必要ファイル選定 → 選定ファイルパース
+    - data: {isInIteration: false, sourceType: llm, targetType: code}
+      id: e-select-parse-files
+      source: node-select-files
+      sourceHandle: source
+      target: node-parse-selected-files
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # 選定ファイルパース → main SHA取得
+    - data: {isInIteration: false, sourceType: code, targetType: http-request}
+      id: e-parse-get-main-sha
+      source: node-parse-selected-files
+      sourceHandle: source
+      target: node-get-main-sha
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # main SHA取得 → ブランチ名構築
+    - data: {isInIteration: false, sourceType: http-request, targetType: code}
+      id: e-main-sha-build-branch
+      source: node-get-main-sha
+      sourceHandle: source
+      target: node-build-branch-name
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # ブランチ名構築 → コード生成 (LLM) ← 変更: ブランチ作成の前にコード生成
+    - data: {isInIteration: false, sourceType: code, targetType: llm}
+      id: e-build-branch-generate-code
+      source: node-build-branch-name
+      sourceHandle: source
+      target: node-generate-code
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # コード生成 → 生成コードパース
+    - data: {isInIteration: false, sourceType: llm, targetType: code}
+      id: e-generate-parse-code
+      source: node-generate-code
+      sourceHandle: source
+      target: node-parse-generated-code
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # 生成コードパース → ブランチ作成 ← 変更: コード生成後にブランチ作成
+    - data: {isInIteration: false, sourceType: code, targetType: http-request}
+      id: e-parse-create-branch
+      source: node-parse-generated-code
+      sourceHandle: source
+      target: node-create-branch
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # ブランチ作成 → GitHub Push
+    - data: {isInIteration: false, sourceType: http-request, targetType: http-request}
+      id: e-create-branch-push
+      source: node-create-branch
+      sourceHandle: source
+      target: node-push-github
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # GitHub Push → タスクステータス更新
+    - data: {isInIteration: false, sourceType: http-request, targetType: http-request}
+      id: e-push-update-task
+      source: node-push-github
+      sourceHandle: source
+      target: node-update-task
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    # タスクステータス更新 → END
+    - data: {isInIteration: false, sourceType: http-request, targetType: end}
+      id: e-update-task-end
+      source: node-update-task
+      sourceHandle: source
+      target: node-end
+      targetHandle: target
+      type: custom
+      zIndex: 0
+
+    nodes:
+    # ─────────────── START ───────────────
+    - data:
+        desc: 'タスクIDとプロジェクトIDを受け取る'
+        selected: false
+        title: START
+        type: start
+        variables:
+        - label: task_id
+          max_length: 256
+          options: []
+          required: true
+          type: text-input
+          variable: task_id
+        - label: project_id
+          max_length: 256
+          options: []
+          required: true
+          type: text-input
+          variable: project_id
+      height: 116
+      id: node-start
+      position: {x: 30, y: 282}
+      positionAbsolute: {x: 30, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── タスク仕様取得 (HTTP) ───────────────
+    - data:
+        desc: 'Supabaseからタスク仕様を取得'
+        selected: false
+        title: タスク仕様取得
+        type: http-request
+        method: get
+        url: 'https://thfthbblfsjhyqcinyms.supabase.co/rest/v1/tasks?id=eq.{{#node-start.task_id#}}&select=*'
+        headers: "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoZnRoYmJsZnNqaHlxY2lueW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMTc1NzAsImV4cCI6MjA5Nzg5MzU3MH0.OTPCMrfgHFDNOvAfw19TKx4ejJudU5zHYDPjEUD5wFs\nAuthorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoZnRoYmJsZnNqaHlxY2lueW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMTc1NzAsImV4cCI6MjA5Nzg5MzU3MH0.OTPCMrfgHFDNOvAfw19TKx4ejJudU5zHYDPjEUD5wFs"
+        params: ''
+        body: {type: none, data: ''}
+        timeout: 30
+        retry_on_failure: false
+        max_retries: 3
+        retry_interval: 100
+      height: 154
+      id: node-get-task
+      position: {x: 330, y: 282}
+      positionAbsolute: {x: 330, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── ファイルマップ取得 (HTTP) ───────────────
+    - data:
+        desc: 'Supabaseからプロジェクト情報・ファイルマップを取得'
+        selected: false
+        title: ファイルマップ取得
+        type: http-request
+        method: get
+        url: 'https://thfthbblfsjhyqcinyms.supabase.co/rest/v1/projects?id=eq.{{#node-start.project_id#}}&select=id,name,repo_url,file_map'
+        headers: "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoZnRoYmJsZnNqaHlxY2lueW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMTc1NzAsImV4cCI6MjA5Nzg5MzU3MH0.OTPCMrfgHFDNOvAfw19TKx4ejJudU5zHYDPjEUD5wFs\nAuthorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoZnRoYmJsZnNqaHlxY2lueW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMTc1NzAsImV4cCI6MjA5Nzg5MzU3MH0.OTPCMrfgHFDNOvAfw19TKx4ejJudU5zHYDPjEUD5wFs"
+        params: ''
+        body: {type: none, data: ''}
+        timeout: 30
+        retry_on_failure: false
+        max_retries: 3
+        retry_interval: 100
+      height: 154
+      id: node-get-project
+      position: {x: 630, y: 282}
+      positionAbsolute: {x: 630, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── コンテキスト整形 (Code) ───────────────
+    - data:
+        desc: 'HTTPレスポンスをパースしてLLMに渡す形式に整形'
+        selected: false
+        title: コンテキスト整形
+        type: code
+        variables:
+        - value_selector: [node-get-task, body]
+          variable: task_body
+        - value_selector: [node-get-project, body]
+          variable: project_body
+        code_language: python3
+        code: |
+          import json
+
+          def main(task_body: str, project_body: str) -> dict:
+              tasks = json.loads(task_body)
+              task = tasks[0] if tasks else {}
+
+              projects = json.loads(project_body)
+              project = projects[0] if projects else {}
+
+              file_map = project.get("file_map") or {}
+              file_map_text = "\n".join(
+                  f"- {path}: {desc}" for path, desc in file_map.items()
+              ) if file_map else "(ファイルなし)"
+
+              return {
+                  "task_id": task.get("id", ""),
+                  "task_title": task.get("title", ""),
+                  "task_description": task.get("description", ""),
+                  "task_priority": str(task.get("priority") or "0"),
+                  "project_id": project.get("id", ""),
+                  "repo_url": project.get("repo_url", "https://github.com/kassamassa/Develop"),
+                  "file_map_text": file_map_text,
+                  "file_map_json": json.dumps(file_map, ensure_ascii=False),
+              }
+        outputs:
+          task_id: {type: string}
+          task_title: {type: string}
+          task_description: {type: string}
+          task_priority: {type: string}
+          project_id: {type: string}
+          repo_url: {type: string}
+          file_map_text: {type: string}
+          file_map_json: {type: string}
+      height: 54
+      id: node-parse-context
+      position: {x: 930, y: 282}
+      positionAbsolute: {x: 930, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── 必要ファイル選定 (LLM) ───────────────
+    - data:
+        desc: 'Claudeにタスクに必要なファイルを選ばせる'
+        selected: false
+        title: 必要ファイル選定
+        type: llm
+        model:
+          provider: anthropic
+          name: claude-sonnet-4-6
+          mode: chat
+          completion_params:
+            temperature: 0
+            max_tokens: 512
+        prompt_template:
+        - role: system
+          text: 'あなたはシニアソフトウェアエンジニアです。タスクの実装に必要なファイルを選定してください。'
+        - role: user
+          text: |
+            以下のタスクを実装するために必要な既存ファイルを選んでください。
+
+            【タスク】
+            タイトル: {{#node-parse-context.task_title#}}
+            説明: {{#node-parse-context.task_description#}}
+
+            【存在するファイル一覧】
+            {{#node-parse-context.file_map_text#}}
+
+            必要なファイルのパスのみをJSON配列で返してください。
+            例: ["src/main.py", "src/utils.py"]
+            ファイルが存在しない・不要な場合は空配列 [] を返してください。
+            JSON配列のみを出力し、他の文章は含めないでください。
+        context: {enabled: false, variable_selector: []}
+        memory: {enabled: false}
+        vision: {enabled: false}
+      height: 98
+      id: node-select-files
+      position: {x: 1230, y: 282}
+      positionAbsolute: {x: 1230, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── 選定ファイルパース (Code) ───────────────
+    - data:
+        desc: 'LLM出力のJSONをパース・ブランチ名を生成'
+        selected: false
+        title: 選定ファイルパース
+        type: code
+        variables:
+        - value_selector: [node-select-files, text]
+          variable: llm_output
+        - value_selector: [node-parse-context, task_priority]
+          variable: task_priority
+        - value_selector: [node-parse-context, task_title]
+          variable: task_title
+        code_language: python3
+        code: |
+          import json
+          import re
+
+          def main(llm_output: str, task_priority: str, task_title: str) -> dict:
+              text = llm_output.strip()
+              text = re.sub(r"```(?:json)?\n?", "", text).strip().rstrip("```").strip()
+              match = re.search(r"\[.*?\]", text, re.DOTALL)
+              selected = json.loads(match.group()) if match else []
+
+              priority = str(task_priority or "0").zfill(3)
+              slug = re.sub(r"[^\w\s-]", "", task_title, flags=re.UNICODE)
+              slug = re.sub(r"[\s_]+", "-", slug.strip())[:40].strip("-")
+              branch_name = f"task/{priority}-{slug}"
+
+              return {
+                  "selected_files": json.dumps(selected, ensure_ascii=False),
+                  "branch_name": branch_name,
+              }
+        outputs:
+          selected_files: {type: string}
+          branch_name: {type: string}
+      height: 54
+      id: node-parse-selected-files
+      position: {x: 1530, y: 282}
+      positionAbsolute: {x: 1530, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── main SHA取得 (HTTP) ───────────────
+    - data:
+        desc: 'GitHubからmainブランチのSHAを取得'
+        selected: false
+        title: main SHA取得
+        type: http-request
+        method: get
+        url: 'https://api.github.com/repos/kassamassa/Develop/git/refs/heads/main'
+        headers: "Authorization: Bearer {{GITHUB_TOKEN}}\nAccept: application/vnd.github+json\nX-GitHub-Api-Version: 2022-11-28"
+        params: ''
+        body: {type: none, data: ''}
+        timeout: 30
+        retry_on_failure: false
+        max_retries: 3
+        retry_interval: 100
+      height: 154
+      id: node-get-main-sha
+      position: {x: 1830, y: 282}
+      positionAbsolute: {x: 1830, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── ブランチ名構築 (Code) ───────────────
+    - data:
+        desc: 'GitHubレスポンスからSHAを抽出・ブランチ作成パラメータを準備'
+        selected: false
+        title: ブランチ名構築
+        type: code
+        variables:
+        - value_selector: [node-get-main-sha, body]
+          variable: sha_body
+        - value_selector: [node-parse-selected-files, branch_name]
+          variable: branch_name
+        code_language: python3
+        code: |
+          import json
+
+          def main(sha_body: str, branch_name: str) -> dict:
+              data = json.loads(sha_body)
+              sha = data["object"]["sha"]
+              return {
+                  "main_sha": sha,
+                  "branch_name": branch_name,
+                  "create_ref_body": json.dumps({
+                      "ref": f"refs/heads/{branch_name}",
+                      "sha": sha,
+                  }),
+              }
+        outputs:
+          main_sha: {type: string}
+          branch_name: {type: string}
+          create_ref_body: {type: string}
+      height: 54
+      id: node-build-branch-name
+      position: {x: 2130, y: 282}
+      positionAbsolute: {x: 2130, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── コード生成 (LLM) ← ブランチ作成の前 ───────────────
+    - data:
+        desc: 'タスク仕様に基づいてコードを生成する (ブランチ作成前に実行)'
+        selected: false
+        title: コード生成
+        type: llm
+        model:
+          provider: anthropic
+          name: claude-sonnet-4-6
+          mode: chat
+          completion_params:
+            temperature: 0.2
+            max_tokens: 8192
+        prompt_template:
+        - role: system
+          text: |
+            あなたはシニアソフトウェアエンジニアです。
+            タスク仕様に基づいて高品質なコードを生成してください。
+            必ずJSON形式のみで回答し、マークダウンのコードブロックは使わないでください。
+        - role: user
+          text: |
+            以下のタスクを実装してください。
+
+            【タスク】
+            タイトル: {{#node-parse-context.task_title#}}
+            説明: {{#node-parse-context.task_description#}}
+            優先度: {{#node-parse-context.task_priority#}}
+
+            【既存ファイルマップ】
+            {{#node-parse-context.file_map_text#}}
+
+            ブランチ名: {{#node-build-branch-name.branch_name#}}
+
+            以下のJSON形式のみで回答してください（マークダウン不使用）:
+            {
+              "files": [
+                {
+                  "path": "ファイルパス（例: src/auth/register.py）",
+                  "content": "ファイルの完全な内容",
+                  "description": "このファイルの役割の一行説明"
+                }
+              ],
+              "summary": "実装内容の要約（1〜2文）"
+            }
+        context: {enabled: false, variable_selector: []}
+        memory: {enabled: false}
+        vision: {enabled: false}
+      height: 98
+      id: node-generate-code
+      position: {x: 2430, y: 282}
+      positionAbsolute: {x: 2430, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── 生成コードパース (Code) ───────────────
+    - data:
+        desc: 'LLM出力をパースしてGitHub Push用に整形'
+        selected: false
+        title: 生成コードパース
+        type: code
+        variables:
+        - value_selector: [node-generate-code, text]
+          variable: generated_text
+        - value_selector: [node-build-branch-name, branch_name]
+          variable: branch_name
+        - value_selector: [node-parse-context, task_title]
+          variable: task_title
+        code_language: python3
+        code: |
+          import json
+          import re
+          import base64
+
+          def main(generated_text: str, branch_name: str, task_title: str) -> dict:
+              text = generated_text.strip()
+              text = re.sub(r"```(?:json)?\n?", "", text).strip()
+              text = re.sub(r"```\s*$", "", text).strip()
+
+              try:
+                  data = json.loads(text)
+              except json.JSONDecodeError:
+                  data = {
+                      "files": [{"path": "TASK_OUTPUT.md", "content": text, "description": "タスク実行結果"}],
+                      "summary": "JSONパースエラー - 生テキストを保存",
+                  }
+
+              files = data.get("files", [])
+              summary = data.get("summary", "")
+
+              first_file = files[0] if files else {
+                  "path": "README_TASK.md",
+                  "content": "# Task\n" + task_title,
+                  "description": "タスク説明"
+              }
+              b64_content = base64.b64encode(first_file["content"].encode("utf-8")).decode("utf-8")
+
+              push_body = json.dumps({
+                  "message": f"feat: {task_title} - {first_file['path']}",
+                  "content": b64_content,
+                  "branch": branch_name,
+              })
+
+              file_map_update = {f["path"]: f.get("description", "") for f in files}
+
+              return {
+                  "first_file_path": first_file["path"],
+                  "push_body": push_body,
+                  "file_map_update": json.dumps(file_map_update, ensure_ascii=False),
+                  "all_files": json.dumps(files, ensure_ascii=False),
+                  "summary": summary,
+                  "create_ref_body": json.dumps({
+                      "ref": f"refs/heads/{branch_name}",
+                      "sha": "",
+                  }),
+              }
+        outputs:
+          first_file_path: {type: string}
+          push_body: {type: string}
+          file_map_update: {type: string}
+          all_files: {type: string}
+          summary: {type: string}
+          create_ref_body: {type: string}
+      height: 54
+      id: node-parse-generated-code
+      position: {x: 2730, y: 282}
+      positionAbsolute: {x: 2730, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── ブランチ作成 (HTTP) ← コード生成後 ───────────────
+    - data:
+        desc: 'GitHub APIでブランチを作成 (コード生成完了後)'
+        selected: false
+        title: ブランチ作成
+        type: http-request
+        method: post
+        url: 'https://api.github.com/repos/kassamassa/Develop/git/refs'
+        headers: "Authorization: Bearer {{GITHUB_TOKEN}}\nAccept: application/vnd.github+json\nX-GitHub-Api-Version: 2022-11-28\nContent-Type: application/json"
+        params: ''
+        body:
+          type: raw-text
+          data: '{{#node-build-branch-name.create_ref_body#}}'
+        timeout: 30
+        retry_on_failure: false
+        max_retries: 3
+        retry_interval: 100
+      height: 154
+      id: node-create-branch
+      position: {x: 3030, y: 282}
+      positionAbsolute: {x: 3030, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── GitHub Push (HTTP) ───────────────
+    - data:
+        desc: '生成コードをブランチにPush'
+        selected: false
+        title: GitHub Push
+        type: http-request
+        method: put
+        url: 'https://api.github.com/repos/kassamassa/Develop/contents/{{#node-parse-generated-code.first_file_path#}}'
+        headers: "Authorization: Bearer {{GITHUB_TOKEN}}\nAccept: application/vnd.github+json\nX-GitHub-Api-Version: 2022-11-28\nContent-Type: application/json"
+        params: ''
+        body:
+          type: raw-text
+          data: '{{#node-parse-generated-code.push_body#}}'
+        timeout: 60
+        retry_on_failure: false
+        max_retries: 3
+        retry_interval: 100
+      height: 154
+      id: node-push-github
+      position: {x: 3330, y: 282}
+      positionAbsolute: {x: 3330, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── タスクステータス更新 (HTTP) ───────────────
+    - data:
+        desc: 'タスクのbranch_nameとstatusをin_progressに更新'
+        selected: false
+        title: タスクステータス更新
+        type: http-request
+        method: patch
+        url: 'https://thfthbblfsjhyqcinyms.supabase.co/rest/v1/tasks?id=eq.{{#node-start.task_id#}}'
+        headers: "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoZnRoYmJsZnNqaHlxY2lueW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMTc1NzAsImV4cCI6MjA5Nzg5MzU3MH0.OTPCMrfgHFDNOvAfw19TKx4ejJudU5zHYDPjEUD5wFs\nAuthorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRoZnRoYmJsZnNqaHlxY2lueW1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMTc1NzAsImV4cCI6MjA5Nzg5MzU3MH0.OTPCMrfgHFDNOvAfw19TKx4ejJudU5zHYDPjEUD5wFs\nContent-Type: application/json\nPrefer: return=representation"
+        params: ''
+        body:
+          type: json
+          data: '{"branch_name": "{{#node-build-branch-name.branch_name#}}", "status": "in_progress"}'
+        timeout: 30
+        retry_on_failure: false
+        max_retries: 3
+        retry_interval: 100
+      height: 154
+      id: node-update-task
+      position: {x: 3630, y: 282}
+      positionAbsolute: {x: 3630, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+
+    # ─────────────── END ───────────────
+    - data:
+        desc: 'ワークフロー完了'
+        selected: false
+        title: END
+        type: end
+        outputs:
+        - value_selector: [node-build-branch-name, branch_name]
+          variable: branch_name
+        - value_selector: [node-parse-context, task_title]
+          variable: task_title
+        - value_selector: [node-parse-generated-code, summary]
+          variable: summary
+        - value_selector: [node-parse-generated-code, file_map_update]
+          variable: files_generated
+        - value_selector: [node-parse-generated-code, all_files]
+          variable: all_files
+      height: 98
+      id: node-end
+      position: {x: 3930, y: 282}
+      positionAbsolute: {x: 3930, y: 282}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
