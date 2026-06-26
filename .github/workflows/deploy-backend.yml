@@ -1,0 +1,30 @@
+name: Deploy Backend (Railway)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service dev-supervisor --detach
+
+      - name: Notify success
+        if: success()
+        run: echo "✅ Backend deployed to Railway successfully."
+
+      - name: Notify failure
+        if: failure()
+        run: echo "❌ Backend deployment to Railway failed."
