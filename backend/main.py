@@ -207,6 +207,7 @@ async def _call_dify_brainstorm(prompt: str) -> str:
         f"{DIFY_BASE}/workflows/run",
         json={
             "inputs": {
+                "project_id": "brainstorm",
                 "task_title": "壁打ち",
                 "task_description": prompt,
                 "task_priority": "1",
