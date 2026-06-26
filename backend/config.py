@@ -14,9 +14,11 @@ GITHUB_OWNER  = "kassamassa"
 GITHUB_REPO   = "Develop"
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 DIFY_BASE     = "https://api.dify.ai/v1"
-DIFY_TASK_EXEC_KEY = os.getenv("DIFY_TASK_EXEC_KEY", "app-1lAkYPmfjz18MgOke1pjpVRv")
+DIFY_TASK_EXEC_KEY  = os.getenv("DIFY_TASK_EXEC_KEY", "app-1lAkYPmfjz18MgOke1pjpVRv")
 # コード生成専用ワークフロー (dify_codegen_only.yml をインポートした後に設定)
-DIFY_CODEGEN_KEY = os.getenv("DIFY_CODEGEN_KEY", "")
+DIFY_CODEGEN_KEY    = os.getenv("DIFY_CODEGEN_KEY", "")
+# 壁打ち専用ワークフロー (dify_brainstorm.yml をインポートした後に設定)
+DIFY_BRAINSTORM_KEY = os.getenv("DIFY_BRAINSTORM_KEY", "")
 
 SUPA_HEADERS = {
     "apikey": SUPABASE_KEY,

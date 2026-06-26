@@ -1,0 +1,177 @@
+app:
+  description: 要件整理・壁打ち・タスク分解を行うAIアシスタント
+  icon: 🤔
+  icon_background: '#E0F2FE'
+  mode: workflow
+  name: dev-supervisor-brainstorm
+  use_icon_as_answer_icon: false
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions: []
+      allowed_file_types: []
+      allowed_file_upload_methods: []
+      enabled: false
+      fileUploadConfig:
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        image_file_size_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        detail: high
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+          - local_file
+          - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      configs: []
+      enabled: false
+      type: ''
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+      - data:
+          isInIteration: false
+          sourceType: start
+          targetType: llm
+        id: edge-start-llm
+        selected: false
+        source: node-start
+        sourceHandle: source
+        target: node-llm
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      - data:
+          isInIteration: false
+          sourceType: llm
+          targetType: end
+        id: edge-llm-end
+        selected: false
+        source: node-llm
+        sourceHandle: source
+        target: node-end
+        targetHandle: target
+        type: custom
+        zIndex: 0
+    nodes:
+      - data:
+          desc: ユーザーメッセージと会話履歴を受け取る
+          selected: false
+          title: START
+          type: start
+          variables:
+            - label: message
+              max_length: 4096
+              options: []
+              required: true
+              type: paragraph
+              variable: message
+            - label: history
+              max_length: 8192
+              options: []
+              required: false
+              type: paragraph
+              variable: history
+        height: 116
+        id: node-start
+        position:
+          x: 80
+          y: 200
+        positionAbsolute:
+          x: 80
+          y: 200
+        selected: false
+        sourcePosition: right
+        targetPosition: left
+        type: custom
+        width: 244
+      - data:
+          context:
+            enabled: false
+            variable_selector: []
+          desc: 要件整理・質問・タスク分解
+          memory:
+            enabled: false
+            role_prefix:
+              assistant: ''
+              user: ''
+            window:
+              enabled: false
+              size: 10
+          model:
+            completion_params:
+              temperature: 0.7
+            mode: chat
+            name: claude-sonnet-4-6
+            provider: anthropic
+          prompt_template:
+            - role: system
+              text: "あなたはAI開発監督システムのアシスタントです。\nユーザーから開発要件を受け取り、以下を行います:\n1. 要件が曖昧な場合は具体的な質問を1〜3個する\n2. 要件が明確になったらタスク分解を行い、JSON形式で返す\n\nタスク分解が完了した場合は必ず以下のJSON形式を含めてください:\n<tasks>\n[\n  {\"title\": \"タスク名\", \"description\": \"詳細説明\", \"priority\": 1},\n  ...\n]\n</tasks>\n\nタスク分解前の質問フェーズではJSONを含めず、自然な日本語で質問してください。\n優先度は1(高)〜5(低)で設定してください。"
+            - role: user
+              text: "{{#node-start.history#}}\n\nユーザー: {{#node-start.message#}}\n\nアシスタント:"
+          selected: false
+          title: コード生成
+          type: llm
+          variables: []
+          vision:
+            configs:
+              detail: high
+            enabled: false
+        height: 98
+        id: node-llm
+        position:
+          x: 400
+          y: 200
+        positionAbsolute:
+          x: 400
+          y: 200
+        selected: false
+        sourcePosition: right
+        targetPosition: left
+        type: custom
+        width: 244
+      - data:
+          desc: 壁打ち結果を返す
+          outputs:
+            - value_selector:
+                - node-llm
+                - text
+              variable: text
+          selected: false
+          title: END
+          type: end
+        height: 86
+        id: node-end
+        position:
+          x: 720
+          y: 200
+        positionAbsolute:
+          x: 720
+          y: 200
+        selected: false
+        sourcePosition: right
+        targetPosition: left
+        type: custom
+        width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 1

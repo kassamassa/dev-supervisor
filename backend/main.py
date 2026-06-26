@@ -182,41 +182,35 @@ BRAINSTORM_SYSTEM_PROMPT = """あなたはAI開発監督システムのアシス
 優先度は1(高)〜5(低)で設定してください。"""
 
 
-def _build_brainstorm_prompt(history: list, message: str) -> str:
-    """会話履歴 + 新メッセージを Dify LLM ノードに渡せる1テキストに変換"""
-    lines = [BRAINSTORM_SYSTEM_PROMPT, ""]
+
+async def _call_dify_brainstorm(message: str, history: list) -> str:
+    """dify_brainstorm ワークフローを呼び出して回答テキストを返す"""
+    import httpx
+    from config import DIFY_BRAINSTORM_KEY, DIFY_BASE
+
+    if not DIFY_BRAINSTORM_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="DIFY_BRAINSTORM_KEY が未設定です。dify/dify_brainstorm.yml を Dify にインポートして Railway 環境変数に設定してください。"
+        )
+
+    # 会話履歴を文字列化して history 変数に渡す
+    history_text = ""
     for m in history:
         role = "ユーザー" if m["role"] == "user" else "アシスタント"
-        lines.append(f"{role}: {m['content']}")
-    lines.append(f"ユーザー: {message}")
-    lines.append("\nアシスタント:")
-    return "\n".join(lines)
+        history_text += f"{role}: {m['content']}\n"
 
-
-async def _call_dify_brainstorm(prompt: str) -> str:
-    """Dify ワークフローを呼び出して回答テキストを返す"""
-    import httpx
-    from config import DIFY_TASK_EXEC_KEY, DIFY_CODEGEN_KEY, DIFY_BASE
-
-    key = DIFY_TASK_EXEC_KEY or DIFY_CODEGEN_KEY
-    if not key:
-        return "Dify API キーが設定されていません。"
-
-    # Dify ワークフロー呼び出し（LLM ノードに prompt を渡す）
     resp = httpx.post(
         f"{DIFY_BASE}/workflows/run",
         json={
             "inputs": {
-                "project_id": "brainstorm",
-                "task_title": "壁打ち",
-                "task_description": prompt,
-                "task_priority": "1",
-                "file_map_text": "",
+                "message": message,
+                "history": history_text,
             },
             "response_mode": "blocking",
             "user": "brainstorm",
         },
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        headers={"Authorization": f"Bearer {DIFY_BRAINSTORM_KEY}", "Content-Type": "application/json"},
         timeout=90,
     )
     if resp.status_code != 200:
@@ -224,13 +218,7 @@ async def _call_dify_brainstorm(prompt: str) -> str:
 
     data = resp.json().get("data", {})
     outputs = data.get("outputs", {})
-    # codegen ワークフローの出力キーを順に試す
-    return (
-        outputs.get("text")
-        or outputs.get("answer")
-        or outputs.get("generated_code")
-        or str(outputs)
-    )
+    return outputs.get("text") or outputs.get("answer") or str(outputs)
 
 
 @app.post("/brainstorm")
@@ -238,9 +226,8 @@ async def api_brainstorm(req: BrainstormRequest):
     """壁打ちエンドポイント（非SSE版・後方互換）— Dify LLM ノードで実行"""
     import re, json as _json
 
-    prompt = _build_brainstorm_prompt(req.history, req.message)
     try:
-        reply = await _call_dify_brainstorm(prompt)
+        reply = await _call_dify_brainstorm(req.message, req.history)
     except HTTPException:
         raise
     except Exception as e:
@@ -277,8 +264,7 @@ async def api_brainstorm_stream(req: BrainstormRequest):
 
         try:
             yield sse("step", {"status": "running", "label": "⏳ タスクを分解中..."})
-            prompt = _build_brainstorm_prompt(req.history, req.message)
-            reply = await _call_dify_brainstorm(prompt)
+            reply = await _call_dify_brainstorm(req.message, req.history)
         except Exception as e:
             error = str(e)
 
