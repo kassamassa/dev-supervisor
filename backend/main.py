@@ -417,8 +417,9 @@ def health():
         "version": "0.7.0",
         "endpoints": [
             "/run-task", "/trigger-pipeline", "/github-webhook",
-            "/test-result", "/notify", "/brainstorm", "/create-project",
-            "/pipeline/start", "/pipeline/resume", "/pipeline/session/{id}",
+            "/test-result", "/notify", "/brainstorm", "/brainstorm/stream",
+            "/create-project", "/pipeline/start", "/pipeline/resume",
+            "/pipeline/session/{id}",
         ],
     }
 
